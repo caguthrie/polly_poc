@@ -45,4 +45,6 @@ let speak = function(text){
     })
 };
 
-speak("hello, I am the Blackrock Black Rock. I was built by Matt Sahn and Chris Guthrie to win the hackathon. I know all sorts of shit about financial markets, stocks, bonds, rocks, stones, and pebbles. ");
+exports.speak = speak;
+
+// speak("hello, I am the Blackrock Black Rock. I was built by Matt Sahn and Chris Guthrie to win the hackathon. I know all sorts of shit about financial markets, stocks, bonds, rocks, stones, and pebbles. ");

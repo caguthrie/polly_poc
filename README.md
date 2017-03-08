@@ -9,3 +9,7 @@ The ```speaker``` dependency needs this installed for Ubuntu: ```$ sudo apt-get 
 For Ubuntu output to 3.5mm jack (instead of HDMI):
 
 ```amixer cset numid=3 1```
+
+sqlite3 db:
+
+create table posts_read (blog TEXT, title TEXT, date_published DATE, time_read DATETIME)
