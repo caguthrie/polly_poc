@@ -44,4 +44,4 @@ let speak = function(text){
     })
 };
 
-speak("hello my name is polly");
+speak("Aladdin Risk for Wealth Management is a splendid product!");
