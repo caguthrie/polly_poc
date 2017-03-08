@@ -98,7 +98,7 @@ button.watch((err, value) => {
 	  let desc = _.get(currentlyReading.item, `${currentlyReading.blog.dataLocations.description}`, "Description not found!");
 	  const strippedDesc = desc.replace(/<(?:.|\n)*?>/gm, '').replace(/&#8217;/g,"'");
 	  let str = "Now reading from article: " + _.get(currentlyReading.item, `${currentlyReading.blog.dataLocations.title}`, "Title not found!");
-	  // str += strippedDesc.substring(0,1000);
+	  str += strippedDesc.substring(0,1000);
 	  currentlyReading = null;
 	  speak(str);
   }
