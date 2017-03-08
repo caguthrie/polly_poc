@@ -17,9 +17,15 @@ let Player = new Speaker({
     sampleRate: 8000
 })
 
+Player.doneWithChunk = function(){
+	console.log("donezo");
+};
+
 var AudioStream = new Stream.Readable();
 AudioStream._read = function () {};
 AudioStream.pipe(Player);
+
+
 
 /**
  * Use Amazon Polly
