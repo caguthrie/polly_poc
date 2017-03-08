@@ -1,6 +1,7 @@
 const FeedParser = require('feedparser');
 const request = require('request'); // for fetching the feed
 const _ = require('lodash');
+const Q = require('q');
 var Gpio = require('onoff').Gpio,
   button = new Gpio(18, 'in', 'both');
 
@@ -28,26 +29,33 @@ let Player = new Speaker({
     sampleRate: 8000
 });
 
-let readyToSpeak = true, doneTimeout;
-
-Player.doneWithChunk = function(){
-	doneTimeout = setTimeout(function(){
-		readyToSpeak = true;
-	}, 3000);
+// Gross hack for hackathon: After line 274 in node_modules/speaker/index.js
+// self.doneWithChunk && self.doneWithChunk();
+Player.doneWithChunk = () => {
+	const deferredCopy = _.clone(deferred);
+	setTimeout(() => {
+		if( !_.get(currentlyReading, 'descInProgress') && _.isEqual(deferredCopy, deferred) )
+		console.log("resolving little one");
+		const lastDeferred = _.find(deferred, (def) => def.promise.inspect().state === "pending");
+		lastDeferred.resolve();
+	}, 2000);
 };
 
 var AudioStream = new Stream.Readable();
-AudioStream._read = function () {};
+AudioStream._read = () => {return {}};
 AudioStream.pipe(Player);
 
 
+let deferred = [];
 
 /**
  * Use Amazon Polly
  * @param  {string} text    Text to speek
  * @param  {string} VoiceId (optional) Amazon Polly Voice
  */
-let speak = function(text){
+let speak = (text) => {
+	deferred = deferred.filter((def) => def.promise.inspect().state === "pending");
+	deferred.push(Q.defer());
     let params = {
         'Text': text,
         'SampleRate': "8000",
@@ -63,7 +71,8 @@ let speak = function(text){
                 AudioStream.push(data.AudioStream)
             }
         }
-    })
+    });
+    return Q.all(deferred.map((def) => def.promise));
 };
 
 /**
@@ -76,40 +85,36 @@ const blogs = [
         title: "The BlackRock Blog",
         dataLocations: {
             title: "title",
-            summary: "summary",
             description: "description",
             datetime: "date"
         }
-    }  
+    } 
 ];
 
 let item, currentlyReading;
 
-button.watch(function (err, value) {
-  if( value == 1 && doneTimeout ){
-	  clearTimeout(doneTimeout);
-	  doneTimeout = null;
+button.watch((err, value) => {
+  if( value == 1 && currentlyReading ){
 	  let desc = _.get(currentlyReading.item, `${currentlyReading.blog.dataLocations.description}`, "Description not found!");
-	  const strippedDesc = desc.replace(/<(?:.|\n)*?>/gm, '');
+	  const strippedDesc = desc.replace(/<(?:.|\n)*?>/gm, '').replace(/&#8217;/g,"'");
 	  let str = "Now reading from article: " + _.get(currentlyReading.item, `${currentlyReading.blog.dataLocations.title}`, "Title not found!");
-	  str += strippedDesc.substring(0,1000);
-	  str += "  More headlines coming up!";
+	  // str += strippedDesc.substring(0,1000);
+	  currentlyReading = null;
 	  speak(str);
   }
 });
 
 _.forEach(blogs, blog => {
-	speak("Reading posts from " + blog.title);
-	setTimeout(function(){
+	speak("Reading posts from " + blog.title, "").then(() => {;
 		const req = request(blog.url);
 		const feedparser = new FeedParser();
 		let onlyReadOnce = true;
 		
-		req.on('error', function (error) {
+		req.on('error', (error) => {
 			throw `can't' make http request ${error}`;
 		});
 		
-		req.on('response', function (res) {
+		req.on('response', function(res){
 			const stream = this; // `this` is `req`, which is a stream
 		
 			if (res.statusCode !== 200) {
@@ -120,11 +125,11 @@ _.forEach(blogs, blog => {
 			}
 		});
 		
-		feedparser.on('error', function (error) {
+		feedparser.on('error', (error) => {
 			throw `can't' read from feedparser ${error}`;
 		});
 		
-		feedparser.on('readable', function () {
+		feedparser.on('readable', function(){
 			// This is where the action is!
 			const stream = this; // `this` is `feedparser`, which is a stream
 			const meta = this.meta; // **NOTE** the "meta" is always available in the context of the feedparser instance
@@ -133,27 +138,20 @@ _.forEach(blogs, blog => {
 				streamPosts( stream, blog, 1);
 			}
 		});
-	}, 4000);
+	});
 });
 
-let streamPosts = function(stream, blog, postNumber){
-	const interval = setInterval(function(){
-		if( readyToSpeak ) {
-			clearInterval(interval);
-			readyToSpeak = false;
-			const item = stream.read();
-			if( item ){
-				console.log("speaking #" + postNumber);
-				currentlyReading = {item, blog};
-				speak(`#${postNumber}: ${_.get(item, `${blog.dataLocations.title}`, "Title not found!")}`);
-				streamPosts(stream, blog, postNumber + 1);
-			}
-			else{
-				speak("What a pity. That's all the articles I can find for " + blog.title);
-				setTimeout(function(){
-					process.exit(0);
-				}, 8000);
-			}
-		}
-	},1000);
+let streamPosts = (stream, blog, postNumber) => {
+	const item = stream.read();
+	if( item ){
+		currentlyReading = {item, blog};
+		speak(`#${postNumber}: ${_.get(item, `${blog.dataLocations.title}`, "Title not found!")}`).then(() => {
+			console.log("recursing!");
+			streamPosts(stream, blog, postNumber + 1);
+		});
+	}
+	else{
+		const exitStr = "What a pity. That's all the articles I can find for " + blog.title;
+		speak(exitStr).then(() => process.exit(0));
+	}
 };
