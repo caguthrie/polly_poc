@@ -28,8 +28,12 @@ let Player = new Speaker({
     sampleRate: 8000
 });
 
+let readyToSpeak = true, doneTimeout;
+
 Player.doneWithChunk = function(){
-	console.log("donezo");
+	doneTimeout = setTimeout(function(){
+		readyToSpeak = true;
+	}, 3000);
 };
 
 var AudioStream = new Stream.Readable();
@@ -69,6 +73,7 @@ let speak = function(text){
 const blogs = [
     {
         url: 'https://www.blackrockblog.com/feed/',
+        title: "The BlackRock Blog",
         dataLocations: {
             title: "title",
             summary: "summary",
@@ -78,55 +83,77 @@ const blogs = [
     }  
 ];
 
-let item, currentDescription;
+let item, currentlyReading;
 
 button.watch(function (err, value) {
-  if( value == 1 ){
-	  console.log("Button press: " + value);
+  if( value == 1 && doneTimeout ){
+	  clearTimeout(doneTimeout);
+	  doneTimeout = null;
+	  let desc = _.get(currentlyReading.item, `${currentlyReading.blog.dataLocations.description}`, "Description not found!");
+	  const strippedDesc = desc.replace(/<(?:.|\n)*?>/gm, '');
+	  let str = "Now reading from article: " + _.get(currentlyReading.item, `${currentlyReading.blog.dataLocations.title}`, "Title not found!");
+	  str += strippedDesc.substring(0,1000);
+	  str += "  More headlines coming up!";
+	  speak(str);
   }
 });
 
-_.forEach(blogs, (blog, i) => {
-    const req = request(blog.url);
-    const feedparser = new FeedParser();
-    
-    req.on('error', function (error) {
-        throw `can't' make http request ${error}`;
-    });
-    
-    req.on('response', function (res) {
-        const stream = this; // `this` is `req`, which is a stream
-    
-        if (res.statusCode !== 200) {
-            this.emit('error', new Error('Bad status code'));
-        }
-        else {
-            stream.pipe(feedparser);
-        }
-    });
-    
-    feedparser.on('error', function (error) {
-        throw `can't' read from feedparser ${error}`;
-    });
-    
-    feedparser.on('readable', function () {
-        // This is where the action is!
-        const stream = this; // `this` is `feedparser`, which is a stream
-        const meta = this.meta; // **NOTE** the "meta" is always available in the context of the feedparser instance
-        while (item = stream.read()) {
-            speak(_.get(item, `${blog.dataLocations.title}`, "Title not found!"));
-        }
-    });
+_.forEach(blogs, blog => {
+	speak("Reading posts from " + blog.title);
+	setTimeout(function(){
+		const req = request(blog.url);
+		const feedparser = new FeedParser();
+		let onlyReadOnce = true;
+		
+		req.on('error', function (error) {
+			throw `can't' make http request ${error}`;
+		});
+		
+		req.on('response', function (res) {
+			const stream = this; // `this` is `req`, which is a stream
+		
+			if (res.statusCode !== 200) {
+				this.emit('error', new Error('Bad status code'));
+			}
+			else {
+				stream.pipe(feedparser);
+			}
+		});
+		
+		feedparser.on('error', function (error) {
+			throw `can't' read from feedparser ${error}`;
+		});
+		
+		feedparser.on('readable', function () {
+			// This is where the action is!
+			const stream = this; // `this` is `feedparser`, which is a stream
+			const meta = this.meta; // **NOTE** the "meta" is always available in the context of the feedparser instance
+			if( onlyReadOnce ){
+				onlyReadOnce = false;
+				streamPosts( stream, blog, 1);
+			}
+		});
+	}, 4000);
 });
 
-let streamPosts = function(stream, location){
-	while( true ){
+let streamPosts = function(stream, blog, postNumber){
+	const interval = setInterval(function(){
 		if( readyToSpeak ) {
-			speak(_.get(item, location, "Title not found!"));
+			clearInterval(interval);
+			readyToSpeak = false;
+			const item = stream.read();
+			if( item ){
+				console.log("speaking #" + postNumber);
+				currentlyReading = {item, blog};
+				speak(`#${postNumber}: ${_.get(item, `${blog.dataLocations.title}`, "Title not found!")}`);
+				streamPosts(stream, blog, postNumber + 1);
+			}
+			else{
+				speak("What a pity. That's all the articles I can find for " + blog.title);
+				setTimeout(function(){
+					process.exit(0);
+				}, 8000);
+			}
 		}
-	}
-	const item = stream.read();
-	if( item ){
-		
-	}
+	},1000);
 };
