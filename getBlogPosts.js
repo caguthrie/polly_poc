@@ -39,7 +39,7 @@ Player.doneWithChunk = () => {
 	}, 2000);
 };
 
-var AudioStream = new Stream.Readable();
+let AudioStream = new Stream.Readable();
 AudioStream._read = () => {return {}};
 AudioStream.pipe(Player);
 
