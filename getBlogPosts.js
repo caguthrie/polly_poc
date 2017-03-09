@@ -1,3 +1,4 @@
+const dbConnection = require('./db.js');
 const FeedParser = require('feedparser');
 const request = require('request'); // for fetching the feed
 const _ = require('lodash');
@@ -32,10 +33,7 @@ let Player = new Speaker({
 // Gross hack for hackathon: After line 274 in node_modules/speaker/index.js
 // self.doneWithChunk && self.doneWithChunk();
 Player.doneWithChunk = () => {
-	const deferredCopy = _.clone(deferred);
 	setTimeout(() => {
-		if( !_.get(currentlyReading, 'descInProgress') && _.isEqual(deferredCopy, deferred) )
-		console.log("resolving little one");
 		const lastDeferred = _.find(deferred, (def) => def.promise.inspect().state === "pending");
 		lastDeferred.resolve();
 	}, 2000);
@@ -81,6 +79,15 @@ let speak = (text) => {
 
 const blogs = [
     {
+        url: 'http://larryfinkdoppleganger.blogspot.com/feeds/posts/default?alt=rss',
+        title: "Larry Fink's Blog",
+        dataLocations: {
+            title: "title",
+            description: "description",
+            datetime: "date"
+        }
+    },
+	{
         url: 'https://www.blackrockblog.com/feed/',
         title: "The BlackRock Blog",
         dataLocations: {
@@ -104,7 +111,8 @@ button.watch((err, value) => {
   }
 });
 
-_.forEach(blogs, blog => {
+function processBlog(blogNumber){
+	const blog = blogs[blogNumber];
 	speak("Reading posts from " + blog.title, "").then(() => {;
 		const req = request(blog.url);
 		const feedparser = new FeedParser();
@@ -135,23 +143,45 @@ _.forEach(blogs, blog => {
 			const meta = this.meta; // **NOTE** the "meta" is always available in the context of the feedparser instance
 			if( onlyReadOnce ){
 				onlyReadOnce = false;
-				streamPosts( stream, blog, 1);
+				const def = Q.defer();
+				streamPost( stream, blog, 1, def).then(() => {
+					if( blogs.length > blogNumber + 1 )
+						processBlog(blogNumber + 1)
+					else
+						process.exit(0);
+				});
 			}
 		});
 	});
-});
+}
 
-let streamPosts = (stream, blog, postNumber) => {
+processBlog(0);
+
+
+let streamPost = (stream, blog, postNumber, def) => {
 	const item = stream.read();
 	if( item ){
-		currentlyReading = {item, blog};
-		speak(`#${postNumber}: ${_.get(item, `${blog.dataLocations.title}`, "Title not found!")}`).then(() => {
-			console.log("recursing!");
-			streamPosts(stream, blog, postNumber + 1);
+		const postTitle =_.get(item, `${blog.dataLocations.title}`, "Title not found!");
+		dbConnection.checkIfReadOrSavePost(blog.title, postTitle).then((alreadyRead) => {
+			// If already read, go to the next post
+			if( alreadyRead && !process.argv.includes("-nodb"))
+				streamPost(stream, blog, postNumber, def);
+			else{
+				// If not read yet, speak it and go onto the next post when completed
+				currentlyReading = {item, blog};
+				speak(`#${postNumber}: ${postTitle}`).then(() => {
+					streamPost(stream, blog, postNumber + 1, def);
+				});
+			}
 		});
 	}
 	else{
-		const exitStr = "What a pity. That's all the articles I can find for " + blog.title;
-		speak(exitStr).then(() => process.exit(0));
+		let finshedBlogStr;
+		if( postNumber == 1 )
+			finshedBlogStr = `That's unfortunate. There are no unread posts on ${blog.title}.`;
+		else
+			finshedBlogStr = `What a pity. That's all the articles I can find for ${blog.title}`;
+		speak(finshedBlogStr).then(() => def.resolve());
 	}
+	return def.promise;
 };
