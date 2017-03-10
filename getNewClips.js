@@ -1,11 +1,12 @@
 const fs = require('fs');
 const fetch = require('node-fetch');
 const getmac = require('getmac');
+const child_process = require('child_process');
 
 require('getmac').getMac(function(err,macAddress){
     if (err)  throw err;
     console.log(macAddress);
-    fetch(`http://localhost:3000/is_there_new_clip/${macAddress}`)
+    fetch(`http://rockstore.herokuapp.com/is_there_new_clip/${macAddress}`)
         .then(res => res.json())
         .then(json => {
             if( json.length > 0 ){

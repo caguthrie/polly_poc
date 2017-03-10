@@ -4,9 +4,10 @@ const Player = require('player');
 const _ = require('lodash');
 const getmac = require('getmac');
 
-const SERVER_ROOT = "http://localhost:3000";
+const SERVER_ROOT = "http://";
 
 let download = function (url, dest, cb) {
+	console.log(url);
     let file = fs.createWriteStream(dest);
     let sendReq = request.get(url);
 
@@ -49,9 +50,9 @@ fs.readFile('./newClips.json', 'utf8', function (err, data) {
     else{
         require('getmac').getMac(function(err,macAddress) {
             // TODO this is a hack -- only play the first clip found
-            download(SERVER_ROOT + clips[0].clip, 'out.mp3', () => {
+            download(SERVER_ROOT + clips[0].clip.substring(2,99999), 'out.mp3', () => {
                 const player = new Player('./out.mp3');
-                request.get(`${SERVER_ROOT}/history/${clips[0].id}/${macAddress}`);
+                request.get(`http://rockstore.herokuapp.com/history/${clips[0].id}/${macAddress}`);
                 // play now and callback when playend
                 player.play(function (err, player) {
                     console.log('playend!');
