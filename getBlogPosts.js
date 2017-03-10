@@ -92,7 +92,7 @@ button.watch((err, value) => {
 });
 
 function processBlog(blogNumber){
-	fs.readFile('./blogs.json', 'utf8', function (err, data) {
+	fs.readFile('/home/pi/Downloads/polly_poc/blogs.json', 'utf8', function (err, data) {
 		const blogs = JSON.parse(data);
 		const blog = blogs[blogNumber];
 		speak("Reading posts from " + blog.title, "").then(() => {;
