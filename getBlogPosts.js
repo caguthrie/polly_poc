@@ -37,7 +37,7 @@ Player.doneWithChunk = () => {
 	setTimeout(() => {
 		const lastDeferred = _.find(deferred, (def) => def.promise.inspect().state === "pending");
 		lastDeferred.resolve();
-	}, 1000);
+	}, 2000);
 };
 
 let AudioStream = new Stream.Readable();
@@ -45,7 +45,7 @@ AudioStream._read = () => {return {}};
 AudioStream.pipe(Player);
 
 
-let deferred = [], speakCount = 0;
+let deferred = [], readCount = 0;
 
 /**
  * Use Amazon Polly
@@ -53,7 +53,7 @@ let deferred = [], speakCount = 0;
  * @param  {string} VoiceId (optional) Amazon Polly Voice
  */
 let speak = (text) => {
-  speakCount++;
+	readCount++;
 	deferred = deferred.filter((def) => def.promise.inspect().state === "pending");
 	deferred.push(Q.defer());
     let params = {
@@ -96,53 +96,54 @@ function processBlog(blogNumber){
 	fs.readFile('/home/pi/Downloads/polly_poc/blogs.json', 'utf8', function (err, data) {
 		const blogs = JSON.parse(data);
 		const blog = blogs[blogNumber];
-    const req = request(blog.url);
-    const feedparser = new FeedParser();
-    let onlyReadOnce = true;
-    
-    req.on('error', (error) => {
-      throw `can't' make http request ${error}`;
-    });
-    
-    req.on('response', function(res){
-      const stream = this; // `this` is `req`, which is a stream
-    
-      if (res.statusCode !== 200) {
-        this.emit('error', new Error('Bad status code'));
-      }
-      else {
-        stream.pipe(feedparser);
-      }
-    });
-    
-    feedparser.on('error', (error) => {
-      throw `can't' read from feedparser ${error}`;
-    });
-    
-    feedparser.on('readable', function(){
-      // This is where the action is!
-      const stream = this; // `this` is `feedparser`, which is a stream
-      const meta = this.meta; // **NOTE** the "meta" is always available in the context of the feedparser instance
-      if( onlyReadOnce ){
-        onlyReadOnce = false;
-        const def = Q.defer();
-        streamPost( stream, blog, 1, def).then(() => {
-          if( blogs.length > blogNumber + 1 )
-            processBlog(blogNumber + 1)
-          else
-            if( speakCount == 0 ){
-              speak("No new blogs to read!").then(() => {
-                process.exit(0);
-              });
-            }
-            else{
-              speak("That's all the new blogs I can find. Goodbye").then(() => {
-                process.exit(0);
-              });
-            }
-        });
-      }
-    });
+		const req = request(blog.url);
+		const feedparser = new FeedParser();
+		let onlyReadOnce = true;
+		
+		req.on('error', (error) => {
+			throw `can't' make http request ${error}`;
+		});
+		
+		req.on('response', function(res){
+			const stream = this; // `this` is `req`, which is a stream
+		
+			if (res.statusCode !== 200) {
+				this.emit('error', new Error('Bad status code'));
+			}
+			else {
+				stream.pipe(feedparser);
+			}
+		});
+		
+		feedparser.on('error', (error) => {
+			throw `can't' read from feedparser ${error}`;
+		});
+		
+		feedparser.on('readable', function(){
+			// This is where the action is!
+			const stream = this; // `this` is `feedparser`, which is a stream
+			const meta = this.meta; // **NOTE** the "meta" is always available in the context of the feedparser instance
+			if( onlyReadOnce ){
+				onlyReadOnce = false;
+				const def = Q.defer();
+				streamPost( stream, blog, 1, def).then(() => {
+					if( blogs.length > blogNumber + 1 )
+						processBlog(blogNumber + 1)
+					else{
+						if( readCount == 0 ){
+							speak(`There are no new blog posts. I'm terribly sorry.`).then(() => {
+								process.exit(0);
+							});
+						}
+						else{
+							speak(`That's all the blog posts I've got!`).then(() => {
+								process.exit(0);
+							});
+						}
+					}
+				});
+			}
+		});
 	});
 }
 
@@ -152,34 +153,36 @@ processBlog(0);
 let streamPost = (stream, blog, postNumber, def) => {
 	const item = stream.read();
 	if( item ){
-	  if( postNumber == 1 ){
-      speak("Reading posts from " + blog.title, "").then(() => {
-        checkAndSpeakPost(stream, blog, postNumber, def);
-      });
-    }
-    else{
-      checkAndSpeakPost(stream, blog, postNumber, def);
-    }
+		const postTitle =_.get(item, `${blog.dataLocations.title}`, "Title not found!");
+		dbConnection.checkIfReadOrSavePost(blog.title, postTitle).then((alreadyRead) => {
+			// If already read, go to the next post
+			if( alreadyRead && !process.argv.includes("-nodb"))
+				streamPost(stream, blog, postNumber, def);
+			else{
+				// If not read yet, speak it and go onto the next post when completed
+				currentlyReading = {item, blog};
+				if( postNumber == 1 ){
+					speak(`Reading posts from ${blog.title}`).then(() => {
+						speak(`#${postNumber}: ${postTitle}`).then(() => {
+							streamPost(stream, blog, postNumber + 1, def);
+						});
+					});
+				}
+				else{
+					speak(`#${postNumber}: ${postTitle}`).then(() => {
+						streamPost(stream, blog, postNumber + 1, def);
+					});
+				}
+				
+
+			}
+		});
 	}
-	else
-      def.resolve();
+	else{
+		let finshedBlogStr;
+		def.resolve();
+	}
 	return def.promise;
 };
-
-let checkAndSpeakPost = function(stream, blog, postNumber, def){
-  const postTitle =_.get(item, `${blog.dataLocations.title}`, "Title not found!");
-  dbConnection.checkIfReadOrSavePost(blog.title, postTitle).then((alreadyRead) => {
-    // If already read, go to the next post
-    if( alreadyRead && !process.argv.includes("-nodb"))
-      streamPost(stream, blog, postNumber, def);
-    else{
-      // If not read yet, speak it and go onto the next post when completed
-      currentlyReading = {item, blog};
-      speak(`#${postNumber}: ${postTitle}`).then(() => {
-        streamPost(stream, blog, postNumber + 1, def);
-      });
-    }
-  });
-}
 
 exports.speak = speak;
