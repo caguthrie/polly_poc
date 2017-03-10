@@ -185,3 +185,5 @@ let streamPost = (stream, blog, postNumber, def) => {
 	}
 	return def.promise;
 };
+
+exports.speak = speak;
