@@ -1,0 +1,20 @@
+[
+    {
+        "url": "http://larryfinkdoppleganger.blogspot.com/feeds/posts/default?alt=rss",
+        "title": "Larry Fink's Blog",
+        "dataLocations": {
+            "title": "title",
+            "description": "description",
+            "datetime": "date"
+        }
+    },
+	{
+        "url": "https://www.blackrockblog.com/feed/",
+        "title": "The BlackRock Blog",
+        "dataLocations": {
+            "title": "title",
+            "description": "description",
+            "datetime": "date"
+        }
+    } 
+]

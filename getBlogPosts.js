@@ -1,3 +1,4 @@
+const fs = require('fs');
 const dbConnection = require('./db.js');
 const FeedParser = require('feedparser');
 const request = require('request'); // for fetching the feed
@@ -77,27 +78,6 @@ let speak = (text) => {
  * End Polly setup
  */
 
-const blogs = [
-    {
-        url: 'http://larryfinkdoppleganger.blogspot.com/feeds/posts/default?alt=rss',
-        title: "Larry Fink's Blog",
-        dataLocations: {
-            title: "title",
-            description: "description",
-            datetime: "date"
-        }
-    },
-	{
-        url: 'https://www.blackrockblog.com/feed/',
-        title: "The BlackRock Blog",
-        dataLocations: {
-            title: "title",
-            description: "description",
-            datetime: "date"
-        }
-    } 
-];
-
 let item, currentlyReading;
 
 button.watch((err, value) => {
@@ -112,45 +92,48 @@ button.watch((err, value) => {
 });
 
 function processBlog(blogNumber){
-	const blog = blogs[blogNumber];
-	speak("Reading posts from " + blog.title, "").then(() => {;
-		const req = request(blog.url);
-		const feedparser = new FeedParser();
-		let onlyReadOnce = true;
-		
-		req.on('error', (error) => {
-			throw `can't' make http request ${error}`;
-		});
-		
-		req.on('response', function(res){
-			const stream = this; // `this` is `req`, which is a stream
-		
-			if (res.statusCode !== 200) {
-				this.emit('error', new Error('Bad status code'));
-			}
-			else {
-				stream.pipe(feedparser);
-			}
-		});
-		
-		feedparser.on('error', (error) => {
-			throw `can't' read from feedparser ${error}`;
-		});
-		
-		feedparser.on('readable', function(){
-			// This is where the action is!
-			const stream = this; // `this` is `feedparser`, which is a stream
-			const meta = this.meta; // **NOTE** the "meta" is always available in the context of the feedparser instance
-			if( onlyReadOnce ){
-				onlyReadOnce = false;
-				const def = Q.defer();
-				streamPost( stream, blog, 1, def).then(() => {
-					if( blogs.length > blogNumber + 1 )
-						processBlog(blogNumber + 1)
-					else
-						process.exit(0);
-				});
-			}
+	fs.readFile('./blogs.json', 'utf8', function (err, data) {
+		const blogs = JSON.parse(data);
+		const blog = blogs[blogNumber];
+		speak("Reading posts from " + blog.title, "").then(() => {;
+			const req = request(blog.url);
+			const feedparser = new FeedParser();
+			let onlyReadOnce = true;
+			
+			req.on('error', (error) => {
+				throw `can't' make http request ${error}`;
+			});
+			
+			req.on('response', function(res){
+				const stream = this; // `this` is `req`, which is a stream
+			
+				if (res.statusCode !== 200) {
+					this.emit('error', new Error('Bad status code'));
+				}
+				else {
+					stream.pipe(feedparser);
+				}
+			});
+			
+			feedparser.on('error', (error) => {
+				throw `can't' read from feedparser ${error}`;
+			});
+			
+			feedparser.on('readable', function(){
+				// This is where the action is!
+				const stream = this; // `this` is `feedparser`, which is a stream
+				const meta = this.meta; // **NOTE** the "meta" is always available in the context of the feedparser instance
+				if( onlyReadOnce ){
+					onlyReadOnce = false;
+					const def = Q.defer();
+					streamPost( stream, blog, 1, def).then(() => {
+						if( blogs.length > blogNumber + 1 )
+							processBlog(blogNumber + 1)
+						else
+							process.exit(0);
+					});
+				}
+			});
 		});
 	});
 }
